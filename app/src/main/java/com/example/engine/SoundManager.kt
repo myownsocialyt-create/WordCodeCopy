@@ -1,44 +1,70 @@
 package com.example.engine
 
-import android.content.Context
-import android.media.AudioAttributes
-import android.media.SoundPool
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.Log
 
-class SoundManager(private val context: Context) {
-    private var soundPool: SoundPool? = null
-    private var isInitialized = false
+/**
+ * Lightweight global sound effects manager.
+ * Uses [ToneGenerator] so no bundled audio assets are required.
+ */
+object SoundManager {
 
-    init {
-        try {
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_GAME)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
+    private const val TAG = "SoundManager"
 
-            soundPool = SoundPool.Builder()
-                .setMaxStreams(4)
-                .setAudioAttributes(audioAttributes)
-                .build()
-            isInitialized = true
+    /** Global mute toggle used by the UI. */
+    @Volatile
+    var isMuted: Boolean = false
+
+    enum class SoundType {
+        TAP,        // button / cell tap
+        SWOOSH,     // drag selection grows
+        CHIME,      // word found
+        SPARKLE,    // bonus word / reward
+        FANFARE,    // level completed
+        BUZZ,       // wrong selection
+        TICK,       // countdown warning
+        GAME_OVER   // time ran out
+    }
+
+    private var toneGenerator: ToneGenerator? = null
+
+    private fun generator(): ToneGenerator? {
+        toneGenerator?.let { return it }
+        return try {
+            ToneGenerator(AudioManager.STREAM_MUSIC, 55).also { toneGenerator = it }
         } catch (e: Exception) {
-            Log.e("SoundManager", "Failed to initialize SoundPool", e)
+            Log.e(TAG, "Failed to create ToneGenerator", e)
+            null
         }
     }
 
-    fun playClickSound() {
-        // Safe sound playback placeholder
-        if (!isInitialized || soundPool == null) return
+    fun play(type: SoundType) {
+        if (isMuted) return
+        try {
+            val (tone, durationMs) = when (type) {
+                SoundType.TAP -> ToneGenerator.TONE_PROP_BEEP to 50
+                SoundType.SWOOSH -> ToneGenerator.TONE_CDMA_PIP to 40
+                SoundType.CHIME -> ToneGenerator.TONE_PROP_ACK to 120
+                SoundType.SPARKLE -> ToneGenerator.TONE_PROP_BEEP2 to 120
+                SoundType.FANFARE -> ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD to 220
+                SoundType.BUZZ -> ToneGenerator.TONE_PROP_NACK to 120
+                SoundType.TICK -> ToneGenerator.TONE_CDMA_PIP to 30
+                SoundType.GAME_OVER -> ToneGenerator.TONE_CDMA_ABBR_ALERT to 300
+            }
+            generator()?.startTone(tone, durationMs)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error playing sound $type", e)
+        }
     }
 
     fun release() {
         try {
-            soundPool?.release()
-            soundPool = null
-            isInitialized = false
-            Log.d("SoundManager", "SoundManager resources successfully released")
+            toneGenerator?.release()
         } catch (e: Exception) {
-            Log.e("SoundManager", "Error releasing sound pool", e)
+            Log.e(TAG, "Error releasing ToneGenerator", e)
+        } finally {
+            toneGenerator = null
         }
     }
 }
